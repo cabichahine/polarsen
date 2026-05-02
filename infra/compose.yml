@@ -210,7 +210,8 @@ services:
       - PG_USER=${PG_USER:-postgres}
       - PG_PASSWORD=${PG_PASSWORD:-postgres}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   s3-init:
     image: minio/mc
