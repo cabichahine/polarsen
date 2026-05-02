@@ -28,7 +28,10 @@ ADD pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev ${UV_PARAMS}
 
-FROM --platform=linux/amd64 rg.fr-par.scw.cloud/polarsen/psql:18-alpine AS pg
+FROM --platform=linux/amd64 rg.fr-par.scw.cloud/polarsen/psql:18-alpine AS pg-amd64
+FROM alpine:3 AS pg-arm64
+FROM pg-${TARGETARCH:-amd64} AS pg
+
 FROM python:3.13-alpine AS main
 
 ARG version
@@ -40,7 +43,8 @@ ARG TARGETARCH
 RUN addgroup user && \
     adduser -s /bin/bash -D -G user user
 
-# Install runtime dependencies (postgresql18-client used as fallback on non-amd64)
+# Install runtime dependencies
+# On arm64 (Apple Silicon), postgresql18-client from apk is used since the custom pg image is amd64-only
 RUN apk add --no-cache \
     libedit \
     krb5-libs \
@@ -50,13 +54,12 @@ RUN apk add --no-cache \
 COPY --from=builder /usr/local/lib/python3.13/site-packages/ /usr/local/lib/python3.13/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 # On amd64, override with binaries from the custom pg image
-RUN --mount=type=bind,from=pg,source=/usr/local/bin,target=/pg-bin \
-    --mount=type=bind,from=pg,source=/usr/local/lib,target=/pg-lib \
-    if [ "$TARGETARCH" = "amd64" ]; then \
-      cp /pg-bin/psql /usr/local/bin/psql && \
-      cp /pg-bin/dropdb /usr/local/bin/dropdb && \
-      cp /pg-bin/createdb /usr/local/bin/createdb && \
-      cp /pg-lib/libpq.* /usr/local/lib/; \
+RUN --mount=type=bind,from=pg,source=/,target=/pg \
+    if [ "$TARGETARCH" = "amd64" ] && [ -f /pg/usr/local/bin/psql ]; then \
+      cp /pg/usr/local/bin/psql /usr/local/bin/psql && \
+      cp /pg/usr/local/bin/dropdb /usr/local/bin/dropdb && \
+      cp /pg/usr/local/bin/createdb /usr/local/bin/createdb && \
+      cp /pg/usr/local/lib/libpq.* /usr/local/lib/; \
     fi
 
 ADD polarsen/ polarsen/
